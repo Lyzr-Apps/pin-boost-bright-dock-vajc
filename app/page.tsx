@@ -365,6 +365,7 @@ export default function Page() {
 
   // Active agent tracking
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null)
+  const [publishStep, setPublishStep] = useState<string>('')
 
   // Schedule state
   const [scheduleData, setScheduleData] = useState<Schedule | null>(null)
@@ -549,35 +550,35 @@ export default function Page() {
     setActiveAgentId(null)
   }
 
-  const handlePublishPin = async () => {
-    setPublishing(true)
+  const executePublish = async (imageUrl: string) => {
+    setPublishStep('Connecting to Pinterest API...')
     setActiveAgentId(PINTEREST_PUBLISHER_ID)
-    setStatusMessage({ type: 'info', text: 'Publishing pin to Pinterest via API...' })
 
     const imageUrls = Array.isArray(pinData?.image_urls) ? pinData.image_urls : []
-    const pinImageUrl = generatedImageUrl || (imageUrls[selectedImageIndex] || imageUrls[0] || '')
+    const pinImageUrl = imageUrl || generatedImageUrl || (imageUrls[selectedImageIndex] || imageUrls[0] || '')
     const destinationLink = pinData?.formatted_url || productUrl
     const hashtagsStr = Array.isArray(editHashtags) ? editHashtags.join(' ') : ''
     const fullDescription = editDescription + (hashtagsStr ? '\n\n' + hashtagsStr : '')
 
-    const message = `Create and publish a Pinterest pin with these EXACT details:
+    const message = `Publish a pin to Pinterest. Follow your instructions exactly.
 
-BOARD NAME: ${selectedBoard || 'Use my first available board'}
+BOARD: ${selectedBoard || '(use my first available board)'}
 TITLE: ${editTitle}
 DESCRIPTION: ${fullDescription}
 IMAGE URL: ${pinImageUrl}
-DESTINATION LINK: ${destinationLink}
+PRODUCT LINK (destination): ${destinationLink}
 
-IMPORTANT:
-- You MUST use the PINTEREST_LIST_BOARDS tool first to get the board_id for "${selectedBoard || 'first available board'}"
-- Then use PINTEREST_CREATE_PIN to create the pin with ALL the above details
-- The destination link "${destinationLink}" MUST be attached as the pin's link so clicks go to the product page
-- The image at "${pinImageUrl}" MUST be used as the pin's media source`
+Steps: 1) Call PINTEREST_LIST_BOARDS to get board_id. 2) Call PINTEREST_CREATE_PIN with board_id, title, description, link="${destinationLink}", media_source={"source_type":"image_url","url":"${pinImageUrl}"}.`
 
+    setPublishStep('Creating pin on Pinterest...')
     const result = await callAIAgent(message, PINTEREST_PUBLISHER_ID)
 
     if (result.success && result.response?.status === 'success') {
       const pubData = result.response.result as PublishResult
+      if (pubData?.publish_status === 'failed') {
+        setStatusMessage({ type: 'error', text: pubData.message || 'Pinterest API returned an error. Check your Composio Pinterest connection.' })
+        return false
+      }
       const newPin: DraftPin = {
         id: generateId(),
         title: editTitle,
@@ -599,16 +600,81 @@ IMPORTANT:
         pin_url: pubData?.pin_url,
       }
       setPublishedPins(prev => [newPin, ...prev])
-      setStatusMessage({ type: 'success', text: `Pin published to Pinterest! ${pubData?.pin_url ? 'View at: ' + pubData.pin_url : ''} ${pubData?.message || ''}` })
+      setStatusMessage({ type: 'success', text: `Pin published to Pinterest! ${pubData?.pin_url ? 'View: ' + pubData.pin_url : ''} ${pubData?.message || ''}` })
+      return true
+    } else {
+      setStatusMessage({ type: 'error', text: result.response?.message || result.error || 'Failed to publish. Verify your Pinterest connection in Lyzr Studio > Composio.' })
+      return false
+    }
+  }
+
+  const handlePublishPin = async () => {
+    setPublishing(true)
+    setPublishStep('Starting publish...')
+    setStatusMessage({ type: 'info', text: 'Publishing pin to Pinterest via API...' })
+
+    const success = await executePublish('')
+    if (success) {
       setPinData(null)
       setGeneratedImageUrl(null)
       setProductUrl('')
       setActiveScreen('dashboard')
-    } else {
-      setStatusMessage({ type: 'error', text: result.response?.message || result.error || 'Failed to publish pin. Please verify your Pinterest connection in Lyzr Studio.' })
     }
 
     setPublishing(false)
+    setPublishStep('')
+    setActiveAgentId(null)
+  }
+
+  // One-click: Generate AI Image then Publish automatically
+  const handleAutoImageAndPublish = async () => {
+    if (!pinData) return
+    setPublishing(true)
+
+    // Step 1: Generate image
+    setPublishStep('Generating AI image with DALL-E 3...')
+    setActiveAgentId(PINTEREST_IMAGE_AGENT_ID)
+    setStatusMessage({ type: 'info', text: 'Step 1/2: Generating Pinterest image with DALL-E 3...' })
+
+    const imgMessage = `Generate a vertical Pinterest pin image for: ${pinData.product_title ?? 'Product'}. ${pinData.product_description ?? ''}. Category: ${pinData.category ?? ''}. Make it eye-catching, vertical orientation, clean product photography style.`
+    const imgResult = await callAIAgent(imgMessage, PINTEREST_IMAGE_AGENT_ID)
+
+    let imageUrl = ''
+    if (imgResult.success) {
+      const files = Array.isArray(imgResult.module_outputs?.artifact_files) ? imgResult.module_outputs.artifact_files : []
+      imageUrl = files?.[0]?.file_url || ''
+      if (imageUrl) {
+        setGeneratedImageUrl(imageUrl)
+      }
+    }
+
+    if (!imageUrl) {
+      // Fallback to product image
+      const imageUrls = Array.isArray(pinData.image_urls) ? pinData.image_urls : []
+      imageUrl = imageUrls[0] || ''
+      if (!imageUrl) {
+        setStatusMessage({ type: 'error', text: 'No image available. Generate an image first or ensure the product has images.' })
+        setPublishing(false)
+        setPublishStep('')
+        setActiveAgentId(null)
+        return
+      }
+      setStatusMessage({ type: 'info', text: 'AI image unavailable, using product image. Step 2/2: Publishing to Pinterest...' })
+    } else {
+      setStatusMessage({ type: 'info', text: 'Step 2/2: Publishing to Pinterest with AI-generated image...' })
+    }
+
+    // Step 2: Publish
+    const success = await executePublish(imageUrl)
+    if (success) {
+      setPinData(null)
+      setGeneratedImageUrl(null)
+      setProductUrl('')
+      setActiveScreen('dashboard')
+    }
+
+    setPublishing(false)
+    setPublishStep('')
     setActiveAgentId(null)
   }
 
@@ -891,11 +957,18 @@ IMPORTANT:
                               <p className="text-xs text-muted-foreground line-clamp-2">{pin.description}</p>
                               <div className="flex items-center justify-between pt-2">
                                 <span className="text-xs text-muted-foreground tracking-wider">{pin.board || 'No board'}</span>
-                                {pin.pin_url && (
-                                  <a href={pin.pin_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-                                    <FiExternalLink size={12} />
-                                  </a>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {pin.formatted_url && (
+                                    <a href={pin.formatted_url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground" title="Product link">
+                                      <FiLink size={11} />
+                                    </a>
+                                  )}
+                                  {pin.pin_url && (
+                                    <a href={pin.pin_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80" title="View on Pinterest">
+                                      <FiExternalLink size={12} />
+                                    </a>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </CardContent>
@@ -1211,16 +1284,19 @@ IMPORTANT:
 
                           <Button
                             onClick={handleGenerateImage}
-                            disabled={generatingImage}
+                            disabled={generatingImage || publishing}
                             variant="outline"
                             className="text-xs tracking-widest w-full"
                           >
                             {generatingImage ? (
-                              <><FiRefreshCw size={14} className="mr-2 animate-spin" />GENERATING IMAGE...</>
+                              <><FiRefreshCw size={14} className="mr-2 animate-spin" />GENERATING WITH DALL-E 3...</>
                             ) : (
-                              <><FiImage size={14} className="mr-2" />GENERATE AI IMAGE</>
+                              <><FiImage size={14} className="mr-2" />GENERATE IMAGE (DALL-E 3)</>
                             )}
                           </Button>
+                          {generatingImage && (
+                            <p className="text-[10px] tracking-widest text-muted-foreground">Creating a vertical Pinterest-optimized image using DALL-E 3 AI model...</p>
+                          )}
                         </div>
 
                         <Separator />
@@ -1291,30 +1367,52 @@ IMPORTANT:
                         </div>
 
                         {/* Action Bar */}
-                        <div className="flex gap-3 pt-2">
+                        <div className="space-y-3 pt-2">
+                          {/* Primary: Auto Image + Publish */}
                           <Button
-                            onClick={handlePublishPin}
+                            onClick={handleAutoImageAndPublish}
                             disabled={publishing || !editTitle}
-                            className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs tracking-widest py-5"
+                            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-xs tracking-widest py-6"
                           >
                             {publishing ? (
-                              <><FiRefreshCw size={14} className="mr-2 animate-spin" />PUBLISHING TO PINTEREST...</>
+                              <><FiRefreshCw size={14} className="mr-2 animate-spin" />{publishStep || 'PROCESSING...'}</>
                             ) : (
-                              <><FiSend size={14} className="mr-2" />PUBLISH TO PINTEREST</>
+                              <><FiZap size={14} className="mr-2" />GENERATE IMAGE & PUBLISH TO PINTEREST</>
                             )}
                           </Button>
-                          <Button
-                            onClick={handleSaveDraft}
-                            disabled={!editTitle}
-                            variant="outline"
-                            className="text-xs tracking-widest py-5"
-                          >
-                            <FiDownload size={14} className="mr-2" />SAVE DRAFT
-                          </Button>
+
+                          <div className="flex gap-3">
+                            {/* Publish with current image */}
+                            <Button
+                              onClick={handlePublishPin}
+                              disabled={publishing || !editTitle || (!generatedImageUrl && !(Array.isArray(pinData?.image_urls) && (pinData?.image_urls?.length ?? 0) > 0))}
+                              variant="outline"
+                              className="flex-1 text-xs tracking-widest py-5"
+                            >
+                              <FiSend size={14} className="mr-2" />PUBLISH WITH CURRENT IMAGE
+                            </Button>
+                            <Button
+                              onClick={handleSaveDraft}
+                              disabled={!editTitle || publishing}
+                              variant="outline"
+                              className="text-xs tracking-widest py-5"
+                            >
+                              <FiDownload size={14} className="mr-2" />DRAFT
+                            </Button>
+                          </div>
                         </div>
+
+                        {/* Publishing Progress */}
                         {publishing && (
-                          <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800">
-                            <p className="text-[10px] tracking-widest">The Pinterest Publisher Agent is connecting to your Pinterest account, fetching boards, and creating the pin with your product link attached. This may take a moment...</p>
+                          <div className="p-4 bg-blue-50 border border-blue-200 text-blue-800 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <FiRefreshCw size={12} className="animate-spin shrink-0" />
+                              <p className="text-xs tracking-widest font-medium">{publishStep || 'Processing...'}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] tracking-wider">Pipeline: DALL-E 3 Image Generation {"-->"} Pinterest API (List Boards {"-->"} Create Pin with product link)</p>
+                              <p className="text-[10px] tracking-wider text-blue-600">Your product link will be attached to the pin so clicks drive traffic to your page.</p>
+                            </div>
                           </div>
                         )}
                       </div>
