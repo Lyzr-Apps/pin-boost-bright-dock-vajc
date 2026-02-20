@@ -20,7 +20,9 @@
     "pinterest_publisher": {
       "agent_id": "6998741cbc8dca6f8c9eb973",
       "type": "independent",
-      "has_schedule": true
+      "has_schedule": true,
+      "tools": ["PINTEREST_LIST_BOARDS", "PINTEREST_CREATE_PIN"],
+      "integration": "composio_pinterest"
     }
   },
   "schedule": {

@@ -38,7 +38,7 @@ const SCHEDULE_ID = '69987421399dfadeac37ce49'
 const AGENTS = [
   { id: PIN_CONTENT_MANAGER_ID, name: 'Pin Content Manager', purpose: 'Extracts product data and optimizes content' },
   { id: PINTEREST_IMAGE_AGENT_ID, name: 'Pinterest Image Agent', purpose: 'Generates Pinterest-optimized images' },
-  { id: PINTEREST_PUBLISHER_ID, name: 'Pinterest Publisher', purpose: 'Publishes pins to Pinterest boards' },
+  { id: PINTEREST_PUBLISHER_ID, name: 'Pinterest Publisher', purpose: 'Connects to Pinterest API to publish pins with product links (PINTEREST_LIST_BOARDS, PINTEREST_CREATE_PIN)' },
 ]
 
 const MOCK_BOARDS = [
@@ -80,6 +80,7 @@ interface PublishResult {
   published_at?: string
   pin_id?: string
   message?: string
+  destination_link?: string
 }
 
 interface StatusMessage {
@@ -344,6 +345,11 @@ export default function Page() {
   const [newKeywordTag, setNewKeywordTag] = useState('')
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
+  // Pinterest boards (fetched from API via publisher agent)
+  const [pinterestBoards, setPinterestBoards] = useState<string[]>([])
+  const [fetchingBoards, setFetchingBoards] = useState(false)
+  const [boardsFetched, setBoardsFetched] = useState(false)
+
   // Bulk mode
   const [bulkUrls, setBulkUrls] = useState('')
   const [bulkPins, setBulkPins] = useState<BulkPinItem[]>([])
@@ -497,19 +503,76 @@ export default function Page() {
     setActiveAgentId(null)
   }
 
+  const handleFetchBoards = async () => {
+    setFetchingBoards(true)
+    setStatusMessage({ type: 'info', text: 'Fetching your Pinterest boards...' })
+    setActiveAgentId(PINTEREST_PUBLISHER_ID)
+
+    const result = await callAIAgent(
+      'List all my Pinterest boards. Return the board names so I can select one for publishing. Just list the boards, do not create any pins.',
+      PINTEREST_PUBLISHER_ID
+    )
+
+    if (result.success && result.response?.status === 'success') {
+      const data = result.response.result
+      const msg = data?.message || result.response?.message || ''
+      // Try to extract board names from the response
+      const boardNames: string[] = []
+      if (data?.board_name && data.board_name !== '') {
+        boardNames.push(data.board_name)
+      }
+      // Parse board names from the message text which typically lists them
+      if (msg) {
+        const lines = msg.split('\n').filter((l: string) => l.trim())
+        lines.forEach((line: string) => {
+          const cleaned = line.replace(/^[-*\d.)\s]+/, '').trim()
+          if (cleaned && cleaned.length > 1 && cleaned.length < 100) {
+            boardNames.push(cleaned)
+          }
+        })
+      }
+      if (boardNames.length > 0) {
+        setPinterestBoards(boardNames)
+        setBoardsFetched(true)
+        setStatusMessage({ type: 'success', text: `Found ${boardNames.length} Pinterest boards` })
+      } else {
+        // Fallback - the agent may have returned boards differently
+        setPinterestBoards(['Default Board'])
+        setBoardsFetched(true)
+        setStatusMessage({ type: 'info', text: 'Connected to Pinterest. Using default board.' })
+      }
+    } else {
+      setStatusMessage({ type: 'error', text: 'Could not fetch boards. Please verify your Pinterest connection in Lyzr Studio.' })
+    }
+
+    setFetchingBoards(false)
+    setActiveAgentId(null)
+  }
+
   const handlePublishPin = async () => {
     setPublishing(true)
     setActiveAgentId(PINTEREST_PUBLISHER_ID)
-    setStatusMessage({ type: 'info', text: 'Publishing pin to Pinterest...' })
+    setStatusMessage({ type: 'info', text: 'Publishing pin to Pinterest via API...' })
 
     const imageUrls = Array.isArray(pinData?.image_urls) ? pinData.image_urls : []
-    const message = `Publish this pin to Pinterest:
-Title: ${editTitle}
-Description: ${editDescription}
-Hashtags: ${Array.isArray(editHashtags) ? editHashtags.join(', ') : ''}
-Image URL: ${generatedImageUrl || (imageUrls[selectedImageIndex] || 'No image')}
-Destination Link: ${pinData?.formatted_url || productUrl}
-Board: ${selectedBoard || 'Default Board'}`
+    const pinImageUrl = generatedImageUrl || (imageUrls[selectedImageIndex] || imageUrls[0] || '')
+    const destinationLink = pinData?.formatted_url || productUrl
+    const hashtagsStr = Array.isArray(editHashtags) ? editHashtags.join(' ') : ''
+    const fullDescription = editDescription + (hashtagsStr ? '\n\n' + hashtagsStr : '')
+
+    const message = `Create and publish a Pinterest pin with these EXACT details:
+
+BOARD NAME: ${selectedBoard || 'Use my first available board'}
+TITLE: ${editTitle}
+DESCRIPTION: ${fullDescription}
+IMAGE URL: ${pinImageUrl}
+DESTINATION LINK: ${destinationLink}
+
+IMPORTANT:
+- You MUST use the PINTEREST_LIST_BOARDS tool first to get the board_id for "${selectedBoard || 'first available board'}"
+- Then use PINTEREST_CREATE_PIN to create the pin with ALL the above details
+- The destination link "${destinationLink}" MUST be attached as the pin's link so clicks go to the product page
+- The image at "${pinImageUrl}" MUST be used as the pin's media source`
 
     const result = await callAIAgent(message, PINTEREST_PUBLISHER_ID)
 
@@ -521,8 +584,8 @@ Board: ${selectedBoard || 'Default Board'}`
         description: editDescription,
         hashtags: editHashtags,
         keyword_tags: editKeywordTags,
-        image_url: generatedImageUrl || imageUrls[0] || '',
-        formatted_url: pinData?.formatted_url || productUrl,
+        image_url: pinImageUrl,
+        formatted_url: destinationLink,
         product_title: pinData?.product_title || '',
         brand: pinData?.brand || '',
         price: pinData?.price || '',
@@ -536,13 +599,13 @@ Board: ${selectedBoard || 'Default Board'}`
         pin_url: pubData?.pin_url,
       }
       setPublishedPins(prev => [newPin, ...prev])
-      setStatusMessage({ type: 'success', text: `Pin published successfully! ${pubData?.message || ''}` })
+      setStatusMessage({ type: 'success', text: `Pin published to Pinterest! ${pubData?.pin_url ? 'View at: ' + pubData.pin_url : ''} ${pubData?.message || ''}` })
       setPinData(null)
       setGeneratedImageUrl(null)
       setProductUrl('')
       setActiveScreen('dashboard')
     } else {
-      setStatusMessage({ type: 'error', text: result.response?.message || 'Failed to publish pin' })
+      setStatusMessage({ type: 'error', text: result.response?.message || result.error || 'Failed to publish pin. Please verify your Pinterest connection in Lyzr Studio.' })
     }
 
     setPublishing(false)
@@ -1164,13 +1227,33 @@ Board: ${selectedBoard || 'Default Board'}`
 
                         {/* Board Selector */}
                         <div className="space-y-2">
-                          <Label className="text-xs tracking-widest">BOARD</Label>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs tracking-widest">PINTEREST BOARD</Label>
+                            <Button
+                              onClick={handleFetchBoards}
+                              disabled={fetchingBoards}
+                              variant="ghost"
+                              size="sm"
+                              className="text-[10px] tracking-widest text-primary h-auto py-1 px-2"
+                            >
+                              {fetchingBoards ? (
+                                <><FiRefreshCw size={10} className="mr-1 animate-spin" />FETCHING...</>
+                              ) : (
+                                <><FiRefreshCw size={10} className="mr-1" />{boardsFetched ? 'REFRESH BOARDS' : 'FETCH MY BOARDS'}</>
+                              )}
+                            </Button>
+                          </div>
+                          {!boardsFetched && (
+                            <div className="p-3 bg-muted border border-border">
+                              <p className="text-[10px] tracking-widest text-muted-foreground">Click "FETCH MY BOARDS" to load boards from your connected Pinterest account. The publisher agent will use the Pinterest API to list your boards.</p>
+                            </div>
+                          )}
                           <Select value={selectedBoard} onValueChange={setSelectedBoard}>
                             <SelectTrigger className="text-sm tracking-wider bg-background border-border">
-                              <SelectValue placeholder="Select a board..." />
+                              <SelectValue placeholder={boardsFetched ? 'Select your Pinterest board...' : 'Fetch boards first or type a board name...'} />
                             </SelectTrigger>
                             <SelectContent>
-                              {MOCK_BOARDS.map(board => (
+                              {(boardsFetched && pinterestBoards.length > 0 ? pinterestBoards : MOCK_BOARDS).map(board => (
                                 <SelectItem key={board} value={board} className="text-sm tracking-wider">{board}</SelectItem>
                               ))}
                             </SelectContent>
@@ -1179,17 +1262,33 @@ Board: ${selectedBoard || 'Default Board'}`
 
                         {/* Link Preview */}
                         <div className="space-y-2">
-                          <Label className="text-xs tracking-widest">DESTINATION LINK</Label>
+                          <Label className="text-xs tracking-widest">PRODUCT DESTINATION LINK</Label>
                           <div className="flex items-center gap-2 p-3 bg-muted border border-border">
-                            <FiLink size={12} className="text-muted-foreground shrink-0" />
-                            <span className="text-xs tracking-wider text-muted-foreground truncate flex-1">{pinData?.formatted_url || productUrl || 'No URL set'}</span>
+                            <FiLink size={12} className="text-primary shrink-0" />
+                            <span className="text-xs tracking-wider text-foreground truncate flex-1">{pinData?.formatted_url || productUrl || 'No URL set'}</span>
                             <button onClick={() => handleCopyUrl(pinData?.formatted_url || productUrl)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
                               <FiCopy size={12} />
                             </button>
                           </div>
+                          <p className="text-[10px] tracking-widest text-muted-foreground">This link will be attached to the pin. When users click your pin on Pinterest, they will be directed to this product page.</p>
                         </div>
 
                         <Separator />
+
+                        {/* Publish Summary */}
+                        <div className="p-4 bg-secondary border border-border space-y-2">
+                          <p className="text-[10px] tracking-widest uppercase text-muted-foreground">PUBLISH SUMMARY</p>
+                          <div className="grid grid-cols-2 gap-2 text-xs tracking-wider">
+                            <span className="text-muted-foreground">Board:</span>
+                            <span>{selectedBoard || 'Auto-select first board'}</span>
+                            <span className="text-muted-foreground">Image:</span>
+                            <span>{generatedImageUrl ? 'AI Generated' : (Array.isArray(pinData?.image_urls) && (pinData?.image_urls?.length ?? 0) > 0 ? 'Product Image' : 'No image')}</span>
+                            <span className="text-muted-foreground">Destination:</span>
+                            <span className="truncate">{pinData?.formatted_url || productUrl || 'None'}</span>
+                            <span className="text-muted-foreground">Hashtags:</span>
+                            <span>{Array.isArray(editHashtags) ? editHashtags.length : 0} tags</span>
+                          </div>
+                        </div>
 
                         {/* Action Bar */}
                         <div className="flex gap-3 pt-2">
@@ -1199,9 +1298,9 @@ Board: ${selectedBoard || 'Default Board'}`
                             className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs tracking-widest py-5"
                           >
                             {publishing ? (
-                              <><FiRefreshCw size={14} className="mr-2 animate-spin" />PUBLISHING...</>
+                              <><FiRefreshCw size={14} className="mr-2 animate-spin" />PUBLISHING TO PINTEREST...</>
                             ) : (
-                              <><FiSend size={14} className="mr-2" />PUBLISH NOW</>
+                              <><FiSend size={14} className="mr-2" />PUBLISH TO PINTEREST</>
                             )}
                           </Button>
                           <Button
@@ -1213,6 +1312,11 @@ Board: ${selectedBoard || 'Default Board'}`
                             <FiDownload size={14} className="mr-2" />SAVE DRAFT
                           </Button>
                         </div>
+                        {publishing && (
+                          <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800">
+                            <p className="text-[10px] tracking-widest">The Pinterest Publisher Agent is connecting to your Pinterest account, fetching boards, and creating the pin with your product link attached. This may take a moment...</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1632,6 +1736,7 @@ Board: ${selectedBoard || 'Default Board'}`
                   <Card className="border border-border bg-card">
                     <CardHeader>
                       <CardTitle className="text-base tracking-widest font-serif">PINTEREST ACCOUNT</CardTitle>
+                      <CardDescription className="text-xs tracking-wider">Connected via Composio Pinterest integration in Lyzr Studio</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="flex items-center gap-4">
@@ -1639,10 +1744,13 @@ Board: ${selectedBoard || 'Default Board'}`
                           <FiStar size={20} className="text-primary" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium tracking-wider">PinPost Business</p>
-                          <p className="text-xs text-muted-foreground tracking-wider">Connected &middot; Business Account</p>
+                          <p className="text-sm font-medium tracking-wider">Pinterest API Connected</p>
+                          <p className="text-xs text-muted-foreground tracking-wider">OAuth authenticated &middot; PINTEREST_LIST_BOARDS &middot; PINTEREST_CREATE_PIN</p>
                         </div>
-                        <Badge variant="outline" className="text-[10px] tracking-widest ml-auto">CONNECTED</Badge>
+                        <Badge variant="outline" className="text-[10px] tracking-widest ml-auto">ACTIVE</Badge>
+                      </div>
+                      <div className="p-3 bg-muted border border-border">
+                        <p className="text-[10px] tracking-widest text-muted-foreground">The Pinterest Publisher Agent uses Composio&apos;s Pinterest integration to automatically create pins on your boards. Pins include your product link as the destination URL so clicks drive traffic to your product page. Authentication is managed through Lyzr Studio.</p>
                       </div>
                     </CardContent>
                   </Card>
