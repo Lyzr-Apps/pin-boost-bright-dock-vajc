@@ -1,0 +1,24 @@
+{
+  "agent_name": "Pinterest Publisher Agent",
+  "agent_id": "6998741cbc8dca6f8c9eb973",
+  "description": "Publishes finalized, user-approved pins to selected Pinterest boards via the Pinterest API",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "publish_status": "string",
+    "pin_url": "string",
+    "board_name": "string",
+    "published_at": "string",
+    "pin_id": "string",
+    "message": "string"
+  },
+  "example_response": {
+    "publish_status": "sample string",
+    "pin_url": "sample string",
+    "board_name": "sample string",
+    "published_at": "sample string",
+    "pin_id": "sample string",
+    "message": "sample string"
+  }
+}

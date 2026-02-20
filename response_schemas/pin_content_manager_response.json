@@ -1,0 +1,56 @@
+{
+  "agent_name": "Pin Content Manager",
+  "agent_id": "6998740bad9589c32de455e4",
+  "description": "Coordinates product extraction and content optimization; aggregates extracted data with generated SEO content into a complete pin draft for review",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "product_title": "string",
+    "product_description": "string",
+    "price": "string",
+    "sale_price": "string",
+    "brand": "string",
+    "image_urls": [
+      "string"
+    ],
+    "features": [
+      "string"
+    ],
+    "category": "string",
+    "pinterest_title": "string",
+    "pinterest_description": "string",
+    "hashtags": [
+      "string"
+    ],
+    "keyword_tags": [
+      "string"
+    ],
+    "formatted_url": "string",
+    "seo_score": "string"
+  },
+  "example_response": {
+    "product_title": "sample string",
+    "product_description": "sample string",
+    "price": "sample string",
+    "sale_price": "sample string",
+    "brand": "sample string",
+    "image_urls": [
+      "sample string"
+    ],
+    "features": [
+      "sample string"
+    ],
+    "category": "sample string",
+    "pinterest_title": "sample string",
+    "pinterest_description": "sample string",
+    "hashtags": [
+      "sample string"
+    ],
+    "keyword_tags": [
+      "sample string"
+    ],
+    "formatted_url": "sample string",
+    "seo_score": "sample string"
+  }
+}

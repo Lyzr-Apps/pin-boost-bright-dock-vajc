@@ -1,0 +1,32 @@
+{
+  "agents": {
+    "product_extractor": {
+      "agent_id": "699873f097f966a0d9ca7ef5",
+      "type": "sub-agent"
+    },
+    "content_optimizer": {
+      "agent_id": "699873f1e0a6b2d9862c0f32",
+      "type": "sub-agent"
+    },
+    "pin_content_manager": {
+      "agent_id": "6998740bad9589c32de455e4",
+      "type": "manager"
+    },
+    "pinterest_image_agent": {
+      "agent_id": "6998740ba60f376149e49302",
+      "type": "independent",
+      "has_image_output": true
+    },
+    "pinterest_publisher": {
+      "agent_id": "6998741cbc8dca6f8c9eb973",
+      "type": "independent",
+      "has_schedule": true
+    }
+  },
+  "schedule": {
+    "schedule_id": "69987421399dfadeac37ce49",
+    "agent_id": "6998741cbc8dca6f8c9eb973",
+    "cron_expression": "0 9 * * *",
+    "timezone": "America/New_York"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "agent_name": "Product Extractor Agent",
+  "agent_id": "699873f097f966a0d9ca7ef5",
+  "description": "Extracts product title, description, price, and image URLs from product links using web search",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "product_title": "string",
+    "product_description": "string",
+    "price": "string",
+    "sale_price": "string",
+    "brand": "string",
+    "image_urls": ["string"],
+    "features": ["string"],
+    "category": "string"
+  },
+  "example_response": {
+    "product_title": "sample string",
+    "product_description": "sample string",
+    "price": "sample string",
+    "sale_price": "sample string",
+    "brand": "sample string",
+    "image_urls": ["sample string"],
+    "features": ["sample string"],
+    "category": "sample string"
+  }
+}

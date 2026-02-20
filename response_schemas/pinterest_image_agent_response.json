@@ -1,0 +1,26 @@
+{
+  "agent_name": "Pinterest Image Agent",
+  "agent_id": "6998740ba60f376149e49302",
+  "description": "Generates high-quality vertical 2:3 ratio Pinterest-ready product pin images with trendy styling",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "image_description": "string",
+    "styling_notes": "string",
+    "pinterest_optimization_tips": "string"
+  },
+  "example_response": {
+    "image_description": "sample string",
+    "styling_notes": "sample string",
+    "pinterest_optimization_tips": "sample string"
+  },
+  "has_module_outputs": true,
+  "module_outputs_example": {
+    "artifact_files": [
+      {
+        "file_url": "https://example.com/image.png"
+      }
+    ]
+  }
+}

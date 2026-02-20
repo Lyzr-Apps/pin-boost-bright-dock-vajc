@@ -1,0 +1,24 @@
+{
+  "agent_name": "Content Optimizer Agent",
+  "agent_id": "699873f1e0a6b2d9862c0f32",
+  "description": "Generates SEO-optimized Pinterest title, trendy description, hashtags/tags, and auto-inserts affiliate links and UTM parameters",
+  "agent_type": "json",
+  "accessor": "result",
+  "auto_generated": true,
+  "response_schema": {
+    "pinterest_title": "string",
+    "pinterest_description": "string",
+    "hashtags": ["string"],
+    "keyword_tags": ["string"],
+    "formatted_url": "string",
+    "seo_score": "string"
+  },
+  "example_response": {
+    "pinterest_title": "sample string",
+    "pinterest_description": "sample string",
+    "hashtags": ["sample string"],
+    "keyword_tags": ["sample string"],
+    "formatted_url": "sample string",
+    "seo_score": "sample string"
+  }
+}
